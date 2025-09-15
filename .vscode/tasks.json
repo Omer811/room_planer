@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run UI tests",
+      "type": "shell",
+      "problemMatcher": [],
+      "osx": { "command": "bash scripts/serve-and-open.sh" },
+      "linux": { "command": "bash scripts/serve-and-open.sh" },
+      "windows": { "command": "powershell -ExecutionPolicy Bypass -File scripts/serve-and-open.ps1" }
+    },
+    {
+      "label": "Start test server (no auto-open)",
+      "type": "shell",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "fileLocation": "absolute",
+        "pattern": [
+          { "regexp": ".+" }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*^$", 
+          "endsPattern": ".*Serving HTTP.*"
+        }
+      },
+      "osx": { "command": "python3 -m http.server 8080" },
+      "linux": { "command": "python3 -m http.server 8080" },
+      "windows": { "command": "powershell -Command python -m http.server 8080" }
+    }
+  ]
+}

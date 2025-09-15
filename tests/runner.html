@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Room Planner – Test Runner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../style.css" />
+    <style>
+      .testbar { position: sticky; top: 0; z-index: 9999; background: #111827; color: #fff; padding: 8px 12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .testbar .sum { font-weight: 700; margin-right: 8px; }
+      .testbar .pass { color: #34d399; }
+      .testbar .fail { color: #f87171; }
+      .testlog { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; padding: 8px 12px; background: #0b1220; color: #cbd5e1; max-height: 220px; overflow: auto; border-bottom: 1px solid #1f2937; }
+      .testlog .ok { color: #86efac; }
+      .testlog .ng { color: #fca5a5; }
+    </style>
+  </head>
+  <body>
+    <div class="testbar">
+      <span class="sum">Tests: <span id="t-count">0</span> | <span class="pass">Pass: <span id="t-pass">0</span></span> | <span class="fail">Fail: <span id="t-fail">0</span></span></span>
+      <span id="t-status">Running…</span>
+      <span style="margin-left:12px"></span>
+      <button id="t-btn-copy" class="btn">Copy Logs</button>
+      <button id="t-btn-download" class="btn">Download Logs</button>
+      <button id="t-btn-snapshot" class="btn">Download Scene JSON</button>
+    </div>
+    <div id="t-log" class="testlog"></div>
+
+    <!-- Reuse the full app UI so IDs exist and handlers bind -->
+    <aside>
+      <h1>Room Planner (p5.js)</h1>
+      <div class="hint">Automated tests run against this live UI.</div>
+
+      <h2>Room</h2>
+      <div class="row">
+        <div>
+          <label>Width (cm)</label>
+          <input id="roomWidth" type="number" min="100" step="10" value="400" />
+        </div>
+        <div>
+          <label>Length (cm)</label>
+          <input id="roomLength" type="number" min="100" step="10" value="300" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Snap epsilon (cm)</label>
+          <input id="snapEps" type="number" min="0" step="1" value="4" />
+        </div>
+        <div>
+          <label>Zoom (px/cm)</label>
+          <input id="zoom" type="number" min="0.5" step="0.5" value="2" />
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <h2>Add Item</h2>
+      <div class="row">
+        <div>
+          <label>Name</label>
+          <input id="addName" type="text" placeholder="e.g., Bed" />
+        </div>
+        <div>
+          <label>Color (override)</label>
+          <input id="addColor" type="color" value="#000000" />
+        </div>
+      </div>
+      <div class="row3">
+        <div>
+          <label>W (cm)</label>
+          <input id="addW" type="number" min="10" step="1" value="100" />
+        </div>
+        <div>
+          <label>L (cm)</label>
+          <input id="addL" type="number" min="10" step="1" value="200" />
+        </div>
+        <div>
+          <label>H (cm)</label>
+          <input id="addH" type="number" min="0" step="1" value="40" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label><input id="addHang" type="checkbox"> Hangable (e.g., shelf)</label>
+        </div>
+        <div>
+          <label><input id="addCarpet" type="checkbox"> Carpet (heightless)</label>
+        </div>
+      </div>
+      <div>
+        <label>Pastel palette (default colors)</label>
+        <div id="palette" class="palette"></div>
+        <div class="hint">Items auto-pick the next pastel color unless you override with the color input.</div>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="btnAdd" class="btn primary">Add item</button>
+        <button id="btnSeed" class="btn ghost">Seed sample</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <h2>Selected Item</h2>
+      <div id="selectedInfo" class="hint">Click an item or pick from the list.</div>
+      <div class="row3" style="margin-top:8px;">
+        <div>
+          <label>W</label>
+          <input id="selW" type="number" />
+        </div>
+        <div>
+          <label>L</label>
+          <input id="selL" type="number" />
+        </div>
+        <div>
+          <label>H</label>
+          <input id="selH" type="number" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>z from floor (cm)</label>
+          <input id="selZ" type="number" />
+        </div>
+        <div>
+          <label>Rotation</label>
+          <select id="selRot">
+            <option value="0">0°</option>
+            <option value="90">90°</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Color</label>
+          <input id="selColor" type="color" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="btnRotate" class="btn">Rotate 90°</button>
+        </div>
+      </div>
+      <div class="row">
+        <div><label><input id="selHang" type="checkbox" /> Hangable</label></div>
+        <div><label><input id="selCarpet" type="checkbox" /> Carpet</label></div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button id="btnDelete" class="btn danger" disabled>Delete</button>
+        <button id="btnDuplicate" class="btn" disabled>Duplicate</button>
+        <button id="btnSnapWalls" class="btn" disabled>Snap to nearest wall</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <h2>Human Probe</h2>
+      <div class="row">
+        <div>
+          <label>Radius (cm)</label>
+          <input id="probeR" type="number" min="10" step="1" value="30" />
+        </div>
+        <div class="pill" style="margin-top:22px;">Drag the circle in the room</div>
+      </div>
+
+      <div class="hr"></div>
+
+      <h2>Session</h2>
+      <div style="display:flex; gap:8px; flex-wrap: wrap;">
+        <button id="btnUndo" class="btn">Undo</button>
+        <button id="btnRedo" class="btn">Redo</button>
+        <button id="btnExport" class="btn">Export JSON</button>
+        <label class="btn" for="importFile">Import JSON</label>
+        <input id="importFile" type="file" accept="application/json" style="display:none" />
+      </div>
+      <div id="exportOut" class="hint" style="margin-top:8px;"></div>
+
+      <div class="hr"></div>
+
+      <h2>Items</h2>
+      <div id="itemList" class="item-list"></div>
+    </aside>
+
+    <main>
+      <div class="toolbar">
+        <div class="pill">Canvas Size: <span id="canvasSizePill" style="margin-left:6px; font-weight:600;">—</span></div>
+        <div class="pill">Cursor: <span id="cursorPill" style="margin-left:6px;">—</span></div>
+        <div class="pill">Status: <span id="statusPill" style="margin-left:6px;">Ready</span></div>
+        <div style="flex:1"></div>
+        <div class="hint">Automated tests manipulate this UI</div>
+      </div>
+      <div id="canvas-holder"></div>
+    </main>
+
+    <!-- Load app and tests -->
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+    <script src="../sketch.js"></script>
+    <script src="test-runner.js"></script>
+  </body>
+  </html>
