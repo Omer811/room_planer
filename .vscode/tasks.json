@@ -28,6 +28,53 @@
       "osx": { "command": "python3 -m http.server 8080" },
       "linux": { "command": "python3 -m http.server 8080" },
       "windows": { "command": "powershell -Command python -m http.server 8080" }
+    },
+    {
+      "label": "Build media (GIF + thumbnails)",
+      "type": "shell",
+      "problemMatcher": [],
+      "osx": { "command": "bash scripts/make-media.sh ${input:recordingPath}" },
+      "linux": { "command": "bash scripts/make-media.sh ${input:recordingPath}" },
+      "windows": { "command": "powershell -ExecutionPolicy Bypass -File scripts/make-media.ps1 -Input ${input:recordingPath}" }
+    }
+    ,
+    {
+      "label": "Generate demo recording",
+      "type": "shell",
+      "problemMatcher": [],
+      "osx": { "command": "python3 scripts/demo_server.py" },
+      "linux": { "command": "python3 scripts/demo_server.py" },
+      "windows": { "command": "powershell -Command python scripts/demo_server.py" }
+    },
+    {
+      "label": "Build media from demo",
+      "type": "shell",
+      "problemMatcher": [],
+      "osx": {
+        "command": "bash scripts/make-media.sh docs/recording.webm",
+        "options": { "env": { "START": "00:00:00", "DURATION": "0", "SNAP_OFFSET": "auto", "FPS": "18" } }
+      },
+      "linux": {
+        "command": "bash scripts/make-media.sh docs/recording.webm",
+        "options": { "env": { "START": "00:00:00", "DURATION": "0", "SNAP_OFFSET": "auto", "FPS": "18" } }
+      },
+      "windows": {
+        "command": "powershell -ExecutionPolicy Bypass -File scripts/make-media.ps1 -Input docs/recording.webm",
+        "options": { "env": { "START": "00:00:00", "DURATION": "0", "SNAP_OFFSET": "auto", "FPS": "18" } }
+      }
+    },
+    {
+      "label": "Build demo media (auto)",
+      "dependsOn": ["Generate demo recording", "Build media from demo"],
+      "dependsOrder": "sequence"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "recordingPath",
+      "type": "promptString",
+      "description": "Full or relative path to your screen recording (place a file named recording.mov in the project root to use the default)",
+      "default": "recording.mov"
     }
   ]
 }

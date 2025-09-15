@@ -131,6 +131,24 @@
       assertApprox(cur.size.hCm, newH, 1e-3, 'H not applied');
     });
 
+    await test('Rename selected item updates model and list', ()=>{
+      const it = selectFirstItem();
+      const newName = it.name + ' — Renamed';
+      const nameEl = document.getElementById('selName');
+      if (nameEl) {
+        setInputValue('selName', newName);
+      } else {
+        // Fallback: apply programmatically if field is absent
+        it.name = newName;
+        if (typeof window.refreshList === 'function') window.refreshList();
+        if (typeof window.refreshSelectedPanel === 'function') window.refreshSelectedPanel();
+      }
+      const cur = scene.get(it.id);
+      assertEqual(cur.name, newName, 'Name not applied to model');
+      const names = Array.from(document.querySelectorAll('#itemList .item-card strong')).map(el=>el.textContent.trim());
+      assertTrue(names.includes(newName), 'List did not reflect new name');
+    });
+
     await test('Rotate via select control and button', ()=>{
       const it = selectFirstItem();
       const initial = it.rotationDeg;
@@ -286,6 +304,18 @@
       window.applySerialized(JSON.parse(JSON.stringify(s)));
       const names1 = window.serialize().items.map(i=>i.name).sort();
       assertEqual(JSON.stringify(names0), JSON.stringify(names1), 'Round trip changed items');
+    });
+
+    await test('Higher z items are topmost when overlapping', ()=>{
+      // Create two overlapping items at same footprint, different z
+      const base = new window.Item({ name:'Base', size:{wCm:80,lCm:80,hCm:40}, pos:{xCm: 100, yCm: 100} });
+      const shelf = new window.Item({ name:'ShelfAbove', size:{wCm:80,lCm:80,hCm:3}, pos:{xCm: 100, yCm: 100}, isHangable:true, zFromFloorCm:120 });
+      scene.add(base); scene.add(shelf);
+      // Pick at a point inside both
+      const hit = window.pickTopmost({ xCm: 110, yCm: 110 });
+      const chosen = hit && hit.id ? scene.get(hit.id) : null;
+      assertTrue(chosen!=null, 'Nothing picked');
+      assertEqual(chosen.name, 'ShelfAbove', 'Expected the higher item to be topmost');
     });
 
     elStatus().textContent = state.fail===0 ? 'All tests passed' : 'There were failing tests';

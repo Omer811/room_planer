@@ -201,10 +201,11 @@ let cnv;
 function setup(){
   scene = new Scene(new Room(400, 300, 4));
   hist = new HistoryManager();
-  pixelsPerCm = parseFloat(document.getElementById('zoom').value);
+  const Zinit = document.getElementById('zoom');
+  pixelsPerCm = Zinit ? (parseFloat(Zinit.value) || 2) : Math.min(2, computeMaxZoom());
   // Clamp initial zoom to fit screen
   pixelsPerCm = clamp(pixelsPerCm, 0.1, computeMaxZoom());
-  const Zinit = document.getElementById('zoom'); if (Zinit) Zinit.value = pixelsPerCm;
+  if (Zinit) Zinit.value = pixelsPerCm;
   // Expose key globals for external tools/tests
   window.scene = scene;
   window.hist = hist;
@@ -251,9 +252,13 @@ function draw(){
   background(255);
   drawRoom();
   drawGrid();
-  // draw carpets first
+  // draw carpets first (always ground-level)
   for(const it of scene.items.filter(i=>i.isCarpet)) drawItem(it);
-  for(const it of scene.items.filter(i=>!i.isCarpet)) drawItem(it);
+  // then other items sorted by distance from floor so higher ones appear above
+  const elevated = scene.items.filter(i=>!i.isCarpet)
+    .slice()
+    .sort((a,b)=> (a.zFromFloorCm - b.zFromFloorCm) || (a.topZ() - b.topZ()));
+  for (const it of elevated) drawItem(it);
   drawHuman();
   drawOverlay();
   updateCursorPill();
@@ -320,10 +325,6 @@ function drawItem(it){
   rect(x, y, w, h, 8);
   noStroke(); fill(0,0,0,160); textSize(12); textAlign(LEFT, TOP);
   text(it.name, x+6, y+4);
-  if (!it.isCarpet && it.zFromFloorCm>0){
-    fill(255); stroke('#64748b'); strokeWeight(1); rect(x+w-84, y+h-22, 78, 18, 10);
-    noStroke(); fill('#0f172a'); textAlign(RIGHT, CENTER); text(`z=${it.zFromFloorCm}cm`, x+w-6, y+h-13);
-  }
   pop();
 }
 
@@ -356,15 +357,19 @@ function updateCursorPill(){
 function pickTopmost(world){
   const hc = scene.human; const dx = world.xCm - hc.pos.xCm, dy = world.yCm - hc.pos.yCm;
   if (dx*dx + dy*dy <= hc.radiusCm*hc.radiusCm) return { id: 'HUMAN', human:true };
-  const all = [...scene.items];
-  for (let i=all.length-1; i>=0; --i){
-    const it = all[i];
+  // Find all items under the point
+  const hits = [];
+  for (const it of scene.items){
     const a = it.footprintAABB();
     if (world.xCm>=a.x && world.xCm<=a.x+a.w && world.yCm>=a.y && world.yCm<=a.y+a.l){
-      return {id: it.id};
+      hits.push(it);
     }
   }
-  return null;
+  if (!hits.length) return null;
+  // Choose the item with greatest distance from floor (hangables above ground items)
+  hits.sort((a,b)=> (a.zFromFloorCm - b.zFromFloorCm) || (a.topZ() - b.topZ()));
+  const top = hits[hits.length-1];
+  return { id: top.id };
 }
 
 function mousePressed(){
@@ -444,6 +449,7 @@ function updateStatus(s){ document.getElementById('statusPill').textContent = s;
 
 function setupPaletteUI(){
   const el = document.getElementById('palette');
+  if (!el) return; // palette not present (e.g., auto-demo)
   el.innerHTML = '';
   PASTELS.forEach(col=>{
     const sw = document.createElement('div'); sw.className='swatch'; sw.style.background = col;
@@ -458,43 +464,51 @@ function attachUI(){
   const L = document.getElementById('roomLength');
   const E = document.getElementById('snapEps');
   const Z = document.getElementById('zoom');
-  [W,L,E].forEach(inp=> inp.addEventListener('change', ()=>{
-    scene.room.widthCm = parseFloat(W.value)||scene.room.widthCm;
-    scene.room.lengthCm = parseFloat(L.value)||scene.room.lengthCm;
-    scene.room.snapEpsilonCm = parseFloat(E.value)||scene.room.snapEpsilonCm;
-    createOrResizeCanvas();
-  }));
-  Z.addEventListener('change', ()=>{
-    const maxZ = computeMaxZoom();
-    const minZ = parseFloat(Z.min) || 0.5;
-    let z = parseFloat(Z.value);
-    if (!isFinite(z)) z = pixelsPerCm;
-    pixelsPerCm = clamp(z, Math.max(0.1, minZ), maxZ);
-    Z.value = String(pixelsPerCm);
-    window.pixelsPerCm = pixelsPerCm;
-    createOrResizeCanvas();
-  });
+  if (W && L && E){
+    [W,L,E].forEach(inp=> inp.addEventListener('change', ()=>{
+      scene.room.widthCm = parseFloat(W.value)||scene.room.widthCm;
+      scene.room.lengthCm = parseFloat(L.value)||scene.room.lengthCm;
+      scene.room.snapEpsilonCm = parseFloat(E.value)||scene.room.snapEpsilonCm;
+      createOrResizeCanvas();
+    }));
+  }
+  if (Z){
+    Z.addEventListener('change', ()=>{
+      const maxZ = computeMaxZoom();
+      const minZ = parseFloat(Z.min) || 0.5;
+      let z = parseFloat(Z.value);
+      if (!isFinite(z)) z = pixelsPerCm;
+      pixelsPerCm = clamp(z, Math.max(0.1, minZ), maxZ);
+      Z.value = String(pixelsPerCm);
+      window.pixelsPerCm = pixelsPerCm;
+      createOrResizeCanvas();
+    });
+  }
 
-  document.getElementById('btnSeed').onclick = seedSample;
-  document.getElementById('btnAdd').onclick = onAddItem;
+  const byId = id => document.getElementById(id);
+  const safeOn = (id, evt, fn) => { const el = byId(id); if (el) el.addEventListener(evt, fn); };
+  const safeClick = (id, fn) => { const el = byId(id); if (el) el.onclick = fn; };
 
-  document.getElementById('btnDelete').onclick = onDeleteSelected;
-  document.getElementById('btnDuplicate').onclick = onDuplicateSelected;
-  document.getElementById('btnSnapWalls').onclick = onSnapSelectedToWall;
-  document.getElementById('btnRotate').onclick = rotateSelected;
+  safeClick('btnSeed', seedSample);
+  safeClick('btnAdd', onAddItem);
 
-  document.getElementById('probeR').addEventListener('change', (e)=>{
+  safeClick('btnDelete', onDeleteSelected);
+  safeClick('btnDuplicate', onDuplicateSelected);
+  safeClick('btnSnapWalls', onSnapSelectedToWall);
+  safeClick('btnRotate', rotateSelected);
+
+  safeOn('probeR', 'change', (e)=>{
     scene.human.radiusCm = parseFloat(e.target.value)||scene.human.radiusCm;
   });
 
-  document.getElementById('btnUndo').onclick = onUndo;
-  document.getElementById('btnRedo').onclick = onRedo;
-  document.getElementById('btnExport').onclick = onExport;
-  document.getElementById('importFile').addEventListener('change', onImport);
+  safeClick('btnUndo', onUndo);
+  safeClick('btnRedo', onRedo);
+  safeClick('btnExport', onExport);
+  safeOn('importFile', 'change', onImport);
 
-  ['selW','selL','selH','selZ','selRot','selColor','selHang','selCarpet'].forEach(id=>{
+  ['selName','selW','selL','selH','selZ','selRot','selColor','selHang','selCarpet'].forEach(id=>{
     const el = document.getElementById(id);
-    // Apply changes both on commit and while typing for immediacy
+    if (!el) return;
     el.addEventListener('change', onSelectedEdit);
     el.addEventListener('input', onSelectedEdit);
   });
@@ -519,6 +533,7 @@ function onAddItem(){
 
 function refreshList(){
   const list = document.getElementById('itemList');
+  if (!list) return;
   list.innerHTML = '';
   scene.items.forEach(it=>{
     const card = document.createElement('div'); card.className = 'item-card' + (selectedId===it.id?' selected':'');
@@ -545,26 +560,40 @@ function refreshSelectedPanel(){
   const btnDel = document.getElementById('btnDelete');
   const btnDup = document.getElementById('btnDuplicate');
   const btnSnap = document.getElementById('btnSnapWalls');
+  // If panel is not present (e.g., auto-demo), skip updates
+  if (!info) return;
   const it = scene.get(selectedId);
   if (!it){
     info.textContent = 'No item selected';
-    btnDel.disabled = btnDup.disabled = btnSnap.disabled = true;
+    if (btnDel) btnDel.disabled = true;
+    if (btnDup) btnDup.disabled = true;
+    if (btnSnap) btnSnap.disabled = true;
     return;
   }
   info.textContent = `${it.name} — position (${Math.round(it.pos.xCm)}, ${Math.round(it.pos.yCm)}) cm`;
-  btnDel.disabled = btnDup.disabled = btnSnap.disabled = false;
-  document.getElementById('selW').value = it.size.wCm;
-  document.getElementById('selL').value = it.size.lCm;
-  document.getElementById('selH').value = it.size.hCm;
-  document.getElementById('selZ').value = it.zFromFloorCm;
-  document.getElementById('selRot').value = it.rotationDeg;
-  document.getElementById('selColor').value = rgbToHex(it.color);
-  document.getElementById('selHang').checked = it.isHangable;
-  document.getElementById('selCarpet').checked = it.isCarpet;
+  if (btnDel) btnDel.disabled = false;
+  if (btnDup) btnDup.disabled = false;
+  if (btnSnap) btnSnap.disabled = false;
+  const setVal = (id, val)=>{ const el=document.getElementById(id); if (el) el.value = val; };
+  const setChk = (id, val)=>{ const el=document.getElementById(id); if (el) el.checked = val; };
+  setVal('selName', it.name);
+  setVal('selW', it.size.wCm);
+  setVal('selL', it.size.lCm);
+  setVal('selH', it.size.hCm);
+  setVal('selZ', it.zFromFloorCm);
+  setVal('selRot', it.rotationDeg);
+  setVal('selColor', rgbToHex(it.color));
+  setChk('selHang', it.isHangable);
+  setChk('selCarpet', it.isCarpet);
 }
 
 function onSelectedEdit(){
   const it = scene.get(selectedId); if (!it) return;
+  const nameEl = document.getElementById('selName');
+  if (nameEl) {
+    const newName = nameEl.value.trim();
+    if (newName) it.name = newName;
+  }
   const W = parseFloat(document.getElementById('selW').value)||it.size.wCm;
   const L = parseFloat(document.getElementById('selL').value)||it.size.lCm;
   const H = parseFloat(document.getElementById('selH').value)||it.size.hCm;

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Auto Demo – Room Planner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../style.css" />
+    <style>
+      body { grid-template-columns: 360px 1fr; }
+      .banner { position: sticky; top: 0; z-index: 9; background: #111827; color: #fff; padding: 6px 10px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="banner">Auto demo runs, records canvas, and uploads to docs/recording.webm</div>
+    <!-- Reuse app UI -->
+    <aside>
+      <h1>Room Planner (p5.js)</h1>
+      <div class="hint">This page drives scripted interactions for the demo recording.</div>
+      <div class="hr"></div>
+      <div class="hint">It will close automatically after upload.</div>
+    </aside>
+    <main>
+      <div class="toolbar">
+        <div class="pill">Canvas Size: <span id="canvasSizePill">—</span></div>
+        <div class="pill">Cursor: <span id="cursorPill">—</span></div>
+        <div class="pill">Status: <span id="statusPill">Booting…</span></div>
+      </div>
+      <div id="canvas-holder"></div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+    <script src="../sketch.js"></script>
+    <script src="auto-demo.js"></script>
+  </body>
+  </html>
+
