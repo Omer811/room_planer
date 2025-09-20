@@ -416,13 +416,6 @@ function wallNormalVector(side){
   return { x: 0, y: -1 };
 }
 
-function normalizeAngle(angle){
-  const twoPi = Math.PI * 2;
-  while (angle < 0) angle += twoPi;
-  while (angle >= twoPi) angle -= twoPi;
-  return angle;
-}
-
 function stickToNearestWall(it){
   const a = it.footprintAABB();
   const {left,right,bottom,top} = scene.room.walls();
@@ -462,22 +455,27 @@ function getDoorSweep(it){
   else center = { xCm: hingeCoord, yCm: scene.room.lengthCm };
   const axis = wallAxisVector(it.wallSide);
   const normal = wallNormalVector(it.wallSide);
-  const closed = it.doorHingeRight ? { x: -axis.x, y: -axis.y } : axis;
-  const closedAngle = Math.atan2(closed.y, closed.x);
-  const cross = closed.x * normal.y - closed.y * normal.x;
-  const rotationSign = cross >= 0 ? 1 : -1; // +1 CCW, -1 CW
-  const sweepMag = Math.PI / 2;
-  let start, end;
-  if (rotationSign >= 0){
-    start = closedAngle;
-    end = closedAngle + sweepMag;
-  } else {
-    start = closedAngle - sweepMag;
-    end = closedAngle;
+  const offset = (it.wallSide==='left'||it.wallSide==='right') ? it.pos.yCm : it.pos.xCm;
+  const tipCoord = it.doorHingeRight ? offset : (offset + leaf);
+  const delta = tipCoord - hingeCoord;
+  const closedVec = { x: axis.x * delta, y: axis.y * delta };
+  const rotCW = { x: closedVec.y, y: -closedVec.x };
+  const rotCCW = { x: -closedVec.y, y: closedVec.x };
+  const dotCW = rotCW.x * normal.x + rotCW.y * normal.y;
+  const openVec = dotCW >= 0 ? rotCW : rotCCW;
+  const toScreen = (vec)=> ({ x: vec.x, y: -vec.y });
+  const closedScreen = toScreen(closedVec);
+  const openScreen = toScreen(openVec);
+  let start = Math.atan2(closedScreen.y, closedScreen.x);
+  let openAngle = Math.atan2(openScreen.y, openScreen.x);
+  let deltaAngle = openAngle - start;
+  if (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
+  if (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+  if (deltaAngle < 0){
+    start = start + deltaAngle;
+    deltaAngle = -deltaAngle;
   }
-  start = normalizeAngle(start);
-  end = normalizeAngle(end);
-  if (end < start) end += Math.PI * 2;
+  const end = start + deltaAngle;
   return { center, radiusCm, start, end };
 }
 

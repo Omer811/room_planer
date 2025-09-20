@@ -260,12 +260,15 @@
 
     await test('Zoom updates pixelsPerCm and canvas size grows (clamped to max)', ()=>{
       const w0 = window.width, h0 = window.height; // p5 width/height
+      const px0 = window.pixelsPerCm;
       setInputValue('zoom', '3');
       const Z = document.getElementById('zoom');
       const maxZ = parseFloat(Z.max) || 3;
       const expected = Math.min(3, maxZ);
       assertApprox(window.pixelsPerCm, expected, 1e-6, 'pixelsPerCm not applied (respecting clamp)');
-      assertTrue(window.width !== w0 || window.height !== h0, 'Canvas size did not change');
+      if (Math.abs(expected - px0) > 1e-6){
+        assertTrue(window.width !== w0 || window.height !== h0, 'Canvas size did not change');
+      }
     });
 
     // Direct position adjustment test (logic-level)
@@ -483,6 +486,94 @@
       assertTrue(intersects, 'Blocker left of right hinge should intersect sweep');
       assertTrue(collides, 'Blocker intersecting sweep should be rejected');
     });
+
+    await test('Door placement stays flush to wall for every orientation', ()=>{
+      const walls = ['left','right','bottom','top'];
+      const hinges = [false, true]; // false=left hinge, true=right hinge
+      const swings = [true, false]; // true=inward, false=outward
+      for (const wall of walls){
+        for (const inward of swings){
+          for (const hingeRight of hinges){
+            const door = new window.Item({
+              name:`Door-${wall}-${inward?'in':'out'}-${hingeRight?'R':'L'}`,
+              size:{ wCm:8, lCm:90, hCm:200 },
+              isDoor:true,
+              doorInward: inward,
+              doorHingeRight: hingeRight,
+              wallSide: wall,
+              offsetCm: (wall==='left'||wall==='right') ? 80 : 120
+            });
+            window.applyWallPlacement(door);
+            const a = door.footprintAABB();
+            const tag = `${wall}-${inward?'in':'out'}-${hingeRight?'R':'L'}`;
+            assertTrue(a.x >= -1e-6, `Door ${tag} extends past left boundary`);
+            assertTrue(a.x + a.w <= scene.room.widthCm + 1e-6, `Door ${tag} extends past right boundary`);
+            assertTrue(a.y >= -1e-6, `Door ${tag} extends past bottom boundary`);
+            assertTrue(a.y + a.l <= scene.room.lengthCm + 1e-6, `Door ${tag} extends past top boundary`);
+            if (wall==='left') assertApprox(a.x, 0, 1e-6, `Door ${tag} should be flush to left wall`);
+            if (wall==='right') assertApprox(a.x + a.w, scene.room.widthCm, 1e-6, `Door ${tag} should be flush to right wall`);
+            if (wall==='bottom') assertApprox(a.y, 0, 1e-6, `Door ${tag} should sit on bottom wall`);
+            if (wall==='top') assertApprox(a.y + a.l, scene.room.lengthCm, 1e-6, `Door ${tag} should sit on top wall`);
+            const sweep = window.getDoorSweep(door);
+            if (inward){
+              assertTrue(!!sweep, `Door ${tag} inward should expose a sweep`);
+              const span = (wall==='left'||wall==='right') ? a.l : a.w;
+              assertApprox(sweep.radiusCm, span, 1e-6, `Door ${tag} sweep radius mismatch`);
+              if (wall==='left'){ assertApprox(sweep.center.xCm, 0, 1e-6, `Door ${tag} sweep center.x mismatch`); }
+              if (wall==='right'){ assertApprox(sweep.center.xCm, scene.room.widthCm, 1e-6, `Door ${tag} sweep center.x mismatch`); }
+              if (wall==='bottom'){ assertApprox(sweep.center.yCm, 0, 1e-6, `Door ${tag} sweep center.y mismatch`); }
+              if (wall==='top'){ assertApprox(sweep.center.yCm, scene.room.lengthCm, 1e-6, `Door ${tag} sweep center.y mismatch`); }
+              if (wall==='left' || wall==='right'){
+                const expectedY = hingeRight ? a.y + a.l : a.y;
+                assertApprox(sweep.center.yCm, expectedY, 1e-6, `Door ${tag} sweep center.y mismatch`);
+              } else {
+                const expectedX = hingeRight ? a.x + a.w : a.x;
+                assertApprox(sweep.center.xCm, expectedX, 1e-6, `Door ${tag} sweep center.x mismatch`);
+              }
+              const axis = (wall==='left'||wall==='right') ? {x:0,y:1} : {x:1,y:0};
+              const pxPerCm = window.pixelsPerCm || 1;
+              const centerScreen = {
+                x: worldToScreenX(sweep.center.xCm),
+                y: worldToScreenY(sweep.center.yCm)
+              };
+              const worldAt = (angle)=>{
+                const sx = centerScreen.x + sweep.radiusCm * pxPerCm * Math.cos(angle);
+                const sy = centerScreen.y + sweep.radiusCm * Math.sin(angle);
+                const world = screenToWorld(sx, sy);
+                return world;
+              };
+              const closedWorld = worldAt(sweep.start);
+              const onDoor = closedWorld.xCm >= a.x - 1e-6 && closedWorld.xCm <= a.x + a.w + 1e-6 &&
+                              closedWorld.yCm >= a.y - 1e-6 && closedWorld.yCm <= a.y + a.l + 1e-6;
+              assertTrue(onDoor, `Door ${tag} sweep should terminate on the door edge`);
+              let endAngle = sweep.end;
+              let delta = sweep.end - sweep.start;
+              if (delta > Math.PI){ delta -= Math.PI * 2; endAngle = sweep.start + delta; }
+              else if (delta < -Math.PI){ delta += Math.PI * 2; endAngle = sweep.start + delta; }
+              const openWorld = worldAt(endAngle);
+              assertTrue(openWorld.xCm >= -1e-6 && openWorld.xCm <= scene.room.widthCm + 1e-6 && openWorld.yCm >= -1e-6 && openWorld.yCm <= scene.room.lengthCm + 1e-6,
+                `Door ${tag} sweep open edge should remain inside room`);
+              if (delta > Math.PI) delta -= Math.PI * 2;
+              if (delta < -Math.PI) delta += Math.PI * 2;
+              const normal = (wall==='left') ? {x:1,y:0} : (wall==='right') ? {x:-1,y:0} : (wall==='bottom') ? {x:0,y:1} : {x:0,y:-1};
+              const samples = 5;
+              for (let i=1;i<=samples;i+=1){
+                const t = i/(samples+1);
+                const ang = sweep.start + delta * t;
+                const sampleWorld = worldAt(ang);
+                assertTrue(sampleWorld.xCm >= -1e-6 && sampleWorld.xCm <= scene.room.widthCm + 1e-6 && sampleWorld.yCm >= -1e-6 && sampleWorld.yCm <= scene.room.lengthCm + 1e-6,
+                  `Door ${tag} sweep sample should lie within room bounds (sample ${i}: ${sampleWorld.xCm.toFixed(3)}, ${sampleWorld.yCm.toFixed(3)}, center ${sweep.center.xCm.toFixed(3)}, ${sweep.center.yCm.toFixed(3)}, angles ${sweep.start.toFixed(3)}-${sweep.end.toFixed(3)})`);
+                const vec = { x: sampleWorld.xCm - sweep.center.xCm, y: sampleWorld.yCm - sweep.center.yCm };
+                const dot = vec.x * normal.x + vec.y * normal.y;
+                assertTrue(dot >= -1e-6, `Door ${tag} sweep opens away from room interior`);
+              }
+            } else {
+              assertTrue(!sweep, `Door ${tag} outward should have no inward sweep`);
+            }
+      }
+    }
+  }
+});
 
     await test('Windows always align with their wall and resist perpendicular rotation', ()=>{
       setInputValue('addWindowName', 'WallWin');

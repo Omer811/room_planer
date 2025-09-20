@@ -1,73 +1,68 @@
-# p5 Room Planner
+# Room Planner (p5.js)
 
-An interactive 2D room planner built with p5.js. The intention is to explore spatial planning through simple, tangible interactions: placing furniture, snapping to walls and neighbors, understanding vertical relationships (carpets, floor items, hangable shelves), and quickly assessing walkability with a human probe. It’s designed for fast iteration and clear visual feedback.
+Room Planner is a browser-based tool for quickly sketching interior layouts. It lets you drop furniture, snap items to walls, preview door swings, and explore walkability with a human probe so you can reason about space before committing to a final plan.
 
-## Demo
+This project was created as part of a background course in the M.Des Design & Technology program at Bezalel Academy of Arts and Design, Jerusalem.
 
-<video src="docs/preview.mp4" autoplay loop muted playsinline width="800">
-  Your browser does not support embedded videos. See the GIF below.
+---
+
+## Preview
+
+<video src="docs/preview.mp4" autoplay loop muted playsinline width="720">
+  Your browser does not support embedded videos. Watch the preview GIF below.
 </video>
 
-![Animated demo](docs/preview.gif)
+![Animated preview](docs/preview.gif)
 
-## Features
+![Cover image](docs/cover-1200x630.png)
 
-- Room size: set width/length (cm) and snap epsilon.
-- Add items with name, color, and dimensions (W×L×H).
-- Drag and snap: align to walls and neighboring edges; carpets act as heightless surfaces.
-- Hangable items (e.g., shelves) rest on the highest supporting surface beneath.
-- Rotate items 0°/90°; items clamp to remain inside the room.
-- Human probe: move a circle to check passability near furniture.
-- Undo/redo for changes; import/export the entire scene as JSON.
-- Smart zoom: canvas auto-fits the viewport, with scroll fallback for edge cases.
+![Thumbnail](docs/thumb-600x400.png)
 
-## Use It
+---
 
-- Open `index.html` in a modern browser.
-- Adjust Room → Width/Length and Snap epsilon.
-- Add Item → set name, size, and color, then click “Add item”.
-- Drag items on the canvas; use “Rotate 90°” or press `R`.
-- “Snap to nearest wall” places the selected item flush to the closest wall.
-- Toggle “Hangable” or “Carpet” to change behavior.
-- Move the Human Probe to evaluate space around furniture.
-- Export/Import JSON to save and load layouts.
-- Shortcuts: Delete, `R`, ⌘/Ctrl+Z (undo), ⌘/Ctrl+Y (redo).
+## What You Can Do
 
-## Gallery
+- Define the room footprint (width, length, wall snap epsilon).
+- Add furniture with custom names, colors, and dimensions (W×L×H).
+- Toggle special behaviors: carpets sit flush to the floor, hangable items rest on the highest support, doors/windows align to walls with swing previews.
+- Drag items, snap to walls or neighbors, rotate 0°/90°, and keep everything inside the room bounds.
+- Move a “human probe” circle to validate clearances and walkability.
+- Undo/redo changes and import/export complete layouts as JSON.
 
-<img src="docs/cover-1200x630.png" alt="Room Planner cover" width="600" />
+---
 
-<img src="docs/thumb-600x400.png" alt="Room Planner thumbnail" width="400" />
+## How to Run the App
 
+1. **Clone or download** this repository.
+2. **Serve the project** (recommended) or open it directly:
+   - using a local server such as `npx serve .` or VS Code’s Live Server extension, then visit the printed URL, **or**
+   - open `index.html` directly in a modern browser (Chrome/Edge/Firefox/Safari).
+3. Use the controls in the sidebar to configure the room, add furniture, and manipulate items on the canvas.
 
-## Tests
+Tips:
+- The toolbar buttons (Rotate, Snap to wall, Duplicate, Delete, Undo/Redo) work on the currently selected item.
+- Keyboard shortcuts: `Delete`, `R`, `Ctrl/Cmd + Z`, `Ctrl/Cmd + Y`.
 
-An in‑browser test runner is included. It exercises:
-- Seeding sample data and verifying items
-- Selecting and editing item dimensions, rotation, color, flags
-- Adding, duplicating, deleting items
-- Undo/redo
-- Room resize and zoom
-- Basic position clamping logic
+---
 
-How to run:
-- Open `tests/runner.html` in a browser (use a local server or open directly). It loads the app and p5.js, then runs tests.
-- The top bar shows totals and pass/fail counts. The log panel prints detailed messages and a final scene snapshot for debugging.
+## Running the Test Suite
 
-Files:
-- `tests/runner.html` – harness page (loads the full UI and p5)
-- `tests/test-runner.js` – test framework and suite with verbose logging
+The project ships with an in-browser regression suite that drives the real UI.
 
-Notes:
-- The runner manipulates the real UI elements (by setting inputs and clicking buttons) so behavior matches the app.
-- If a test fails, check the log panel for the exact assertion and values. You can also open DevTools and inspect `scene`.
-### Automated build via VS Code task
+1. Open `tests/runner.html` in the same way you host or open the main app.
+2. The top status bar shows how many tests ran, passed, or failed.
+3. Scroll the log panel for detailed assertions and the final serialized scene snapshot.
 
-- Record a short screen capture that shows adding an item, dragging, snapping, and a rotation.
-- In VS Code: Tasks → “Build media (GIF + thumbnails)”
-  - When prompted, enter the path to your recording (default: `recording.mov`).
-  - Outputs into `docs/`: `preview.gif`, `cover-1200x630.png`, `thumb-600x400.png`.
-- To tweak:
-  - You can set environment variables before running the task if you use a terminal, or run the script directly:
-    - `START=00:00:02 DURATION=7 WIDTH=720 FPS=12 bash scripts/make-media.sh recording.mov`
-    - `CROP=1200:700:100:80 bash scripts/make-media.sh recording.mov`
+Because the runner uses the actual DOM controls, any failing test usually mirrors an end-user bug. If a test fails, inspect the log entry or open DevTools to inspect `window.scene` for state details.
+
+---
+
+## Project Structure Highlights
+
+- `index.html`, `sketch.js`, `style.css` – main application (p5.js sketch + UI wiring).
+- `docs/` – preview video/GIF and marketing images (generated with `scripts/make-media.sh`).
+- `tests/runner.html`, `tests/test-runner.js` – automated UI tests.
+- `scripts/make-media.sh` – helper to regenerate the media assets.
+
+Enjoy planning!
+
