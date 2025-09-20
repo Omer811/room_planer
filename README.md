@@ -8,11 +8,9 @@ This project was created as part of a background course in the M.Des Design & Te
 
 ## Preview
 
-<video src="docs/preview.mp4" autoplay loop muted playsinline width="720">
+<video src="docs/preview.mov" autoplay loop muted playsinline width="720">
   Your browser does not support embedded videos.
 </video>
-
-![Cover image](docs/cover-1200x630.png)
 
 ![Thumbnail](docs/thumb-600x400.png)
 
