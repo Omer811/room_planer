@@ -205,6 +205,35 @@
       assertEqual(scene.items.length, n0, 'Delete did not remove');
     });
 
+    await test('Duplicate then rename keeps the copy visible and counted', ()=>{
+      // Start from a known selection
+      const it0 = selectFirstItem();
+      const baseName = it0.name;
+      const n0 = scene.items.length;
+      // Duplicate
+      click('btnDuplicate');
+      assertEqual(scene.items.length, n0+1, 'Duplicate did not add');
+      // Find the new copy by name heuristic
+      const copy = scene.items.find(i => i.name === baseName + ' copy');
+      if (!copy) throw new Error('Could not find duplicated copy');
+      // Select the copy and rename it via the selected-name field
+      if (typeof window.setSelectedId === 'function') window.setSelectedId(copy.id);
+      const newName = baseName + ' (Renamed Copy)';
+      const nameEl = document.getElementById('selName');
+      if (!nameEl) throw new Error('Missing #selName to rename');
+      nameEl.value = newName;
+      nameEl.dispatchEvent(new Event('input', { bubbles: true }));
+      nameEl.dispatchEvent(new Event('change', { bubbles: true }));
+      // Assert item count unchanged and copy still present with new name
+      assertEqual(scene.items.length, n0+1, 'Rename should not change item count');
+      const still = scene.get(copy.id);
+      assertTrue(!!still, 'Renamed copy disappeared from scene');
+      assertEqual(still.name, newName, 'Renamed copy name not applied');
+      const names = scene.items.map(i=>i.name);
+      assertTrue(names.includes(baseName), 'Original item missing after rename');
+      assertTrue(names.includes(newName), 'Renamed copy missing after rename');
+    });
+
     await test('Undo/Redo reverts and reapplies last action', ()=>{
       // Add an item, then undo and redo
       const n0 = scene.items.length;
@@ -316,6 +345,194 @@
       const chosen = hit && hit.id ? scene.get(hit.id) : null;
       assertTrue(chosen!=null, 'Nothing picked');
       assertEqual(chosen.name, 'ShelfAbove', 'Expected the higher item to be topmost');
+    });
+
+    await test('Add inward door and block sweep area', ()=>{
+      // Create a door via UI
+      const n0 = scene.items.length;
+      const swingEl = document.getElementById('addDoorSwing'); if (swingEl) swingEl.value = 'in';
+      setInputValue('addDoorName', 'Test Door');
+      click('btnAddDoor');
+      assertEqual(scene.items.length, n0+1, 'Door not added');
+      const door = scene.items.find(i=>i.isDoor);
+      assertTrue(!!door, 'Door not found');
+      // Place a box near the hinge inside the sweep area and expect collision
+      const box = new window.Item({ name:'BoxNearDoor', size:{wCm:40,lCm:40,hCm:10} });
+      // Position box at the door center + small offset inside room
+      const sw = window.getDoorSweep ? window.getDoorSweep(door) : null;
+      let target = { xCm: 10, yCm: 10 };
+      if (sw){ target = { xCm: sw.center.xCm + 10, yCm: sw.center.yCm + 10 }; }
+      box.pos = target;
+      const collides = scene.anyCollision(box);
+      assertTrue(collides, 'Box should collide with door sweep area');
+    });
+
+    await test('Add window and prevent hangable overlap; window stays on wall', ()=>{
+      const n0 = scene.items.length;
+      setInputValue('addWindowName', 'Test Window');
+      click('btnAddWindow');
+      assertEqual(scene.items.length, n0+1, 'Window not added');
+      const win = scene.items.find(i=>i.isWindow);
+      assertTrue(!!win, 'Window not found');
+      // Window must be on a wall: at least one side equal to room bound
+      const a = win.footprintAABB();
+      const onWall = (a.x===0 || a.y===0 || Math.abs(a.x+a.w - scene.room.widthCm)<1e-6 || Math.abs(a.y+a.l - scene.room.lengthCm)<1e-6);
+      assertTrue(onWall, 'Window not placed on a wall');
+      // Create a hangable shelf overlapping window footprint; expect collision
+      const shelf = new window.Item({ name:'Hangable', size:{wCm:80,lCm:20,hCm:3}, isHangable:true, zFromFloorCm:120, pos:{xCm:a.x, yCm:a.y} });
+      const bad = scene.anyCollision(shelf);
+      assertTrue(bad, 'Hangable overlapping window should be disallowed');
+    });
+
+    await test('Door swing controls visible only when a door is selected', ()=>{
+      // Ensure we have at least one normal item and a door
+      const plain = scene.items.find(i=>!i.isDoor) || new window.Item({ name:'Plain', size:{wCm:50,lCm:50,hCm:10} });
+      if (!plain.id || !scene.get(plain.id)) scene.add(plain);
+      // Add a door if none
+      let door = scene.items.find(i=>i.isDoor);
+      if (!door){ setInputValue('addDoorName', 'DoorVis'); click('btnAddDoor'); door = scene.items.find(i=>i.isDoor); }
+      // Select non-door: door options hidden
+      window.setSelectedId(plain.id);
+      const cont = document.getElementById('doorOpts');
+      assertTrue(!!cont, 'doorOpts container missing');
+      const styleNonDoor = window.getComputedStyle ? getComputedStyle(cont).display : cont.style.display;
+      assertTrue(styleNonDoor === 'none', 'Door controls should be hidden for non-door');
+      // Select door: door options visible
+      window.setSelectedId(door.id);
+      const styleDoor = window.getComputedStyle ? getComputedStyle(cont).display : cont.style.display;
+      assertTrue(styleDoor !== 'none', 'Door controls should be visible for door');
+    });
+
+    await test('Door hinge can be switched left/right and updates sweep pivot', ()=>{
+      // Create a door on the bottom wall for deterministic checks
+      setInputValue('addDoorName', 'HingeDoor');
+      click('btnAddDoor');
+      const d = scene.items.find(i=>i.isDoor && i.name==='HingeDoor');
+      assertTrue(!!d, 'Door not added');
+      window.setSelectedId(d.id);
+      // Place on bottom wall and set offset
+      const wallSel = document.getElementById('selWall'); wallSel.value = 'bottom'; wallSel.dispatchEvent(new Event('change', {bubbles:true}));
+      setInputValue('selOffset', '100');
+      const sw0 = window.getDoorSweep(d);
+      const hingeSel = document.getElementById('selHinge');
+      // Hinge left
+      hingeSel.value = 'left'; hingeSel.dispatchEvent(new Event('change', {bubbles:true}));
+      const swL = window.getDoorSweep(d);
+      // Hinge right
+      hingeSel.value = 'right'; hingeSel.dispatchEvent(new Event('change', {bubbles:true}));
+      const swR = window.getDoorSweep(d);
+      assertTrue(!!swL && !!swR, 'Door sweep missing');
+      // Center x changes when hinge switches ends
+      assertTrue(swL.center.xCm !== swR.center.xCm, 'Hinge change did not move sweep center');
+    });
+
+    await test('Door on bottom wall rotates and spans leaf length', ()=>{
+      const door = new window.Item({ name:'DiagDoor', size:{ wCm:10, lCm:90, hCm:200 }, isDoor:true, doorInward:true, wallSide:'bottom', offsetCm:120 });
+      window.applyWallPlacement(door);
+      const footprint = door.footprintAABB();
+      assertEqual(door.rotationDeg, 90, 'Bottom-wall door should rotate to 90°');
+      assertApprox(footprint.w, 90, 1e-6, 'Door footprint width mismatch');
+      assertApprox(footprint.l, 10, 1e-6, 'Door footprint depth mismatch');
+    });
+
+    await test('Door sweep radius matches leaf span on horizontal walls', ()=>{
+      const door = new window.Item({ name:'BottomDoor', size:{ wCm:10, lCm:90, hCm:200 }, isDoor:true, doorInward:true, wallSide:'bottom', offsetCm:120 });
+      window.applyWallPlacement(door);
+      scene.add(door);
+      const sweep = window.getDoorSweep(door);
+      scene.remove(door.id);
+      assertTrue(!!sweep, 'Expected sweep data for inward door');
+      assertApprox(sweep.radiusCm, door.size.lCm, 1e-6, 'Door sweep radius mismatch');
+      assertApprox(sweep.center.xCm, door.pos.xCm, 1e-6, 'Door hinge center mismatch');
+    });
+
+    await test('Window moved to vertical wall rotates and keeps span', ()=>{
+      const win = new window.Item({ name:'WideWindow', size:{ wCm:120, lCm:20, hCm:30 }, isWindow:true, wallSide:'top', offsetCm:40 });
+      window.applyWallPlacement(win);
+      const spanTop = win.footprintAABB().w;
+      win.wallSide = 'left';
+      win.offsetCm = 60;
+      window.applyWallPlacement(win);
+      const bb = win.footprintAABB();
+      assertApprox(bb.l, spanTop, 1e-6, 'Window span mismatch');
+      assertTrue(bb.w <= bb.l, 'Window thickness should remain the short edge when vertical');
+      assertApprox(bb.x, 0, 1e-6, 'Window flush mismatch');
+    });
+
+    await test('Inward door sweep blocks placement across full swing', ()=>{
+      const door = new window.Item({ name:'SweepDoor', size:{ wCm:8, lCm:100, hCm:200 }, isDoor:true, doorInward:true, wallSide:'bottom', offsetCm:150 });
+      window.applyWallPlacement(door);
+      scene.add(door);
+      const blocker = new window.Item({ name:'SweepBlocker', size:{ wCm:25, lCm:25, hCm:40 }, pos:{ xCm: door.pos.xCm + door.size.lCm * 0.6, yCm: door.size.wCm + 8 } });
+      const collides = scene.anyCollision(blocker);
+      scene.remove(door.id);
+      assertTrue(collides, 'Blocker inside inward door sweep should be rejected');
+    });
+
+    await test('Right-hinge door flips sweep quadrant correctly', ()=>{
+      const door = new window.Item({ name:'RightHinge', size:{ wCm:8, lCm:90, hCm:200 }, isDoor:true, doorInward:true, doorHingeRight:true, wallSide:'bottom', offsetCm:200 });
+      window.applyWallPlacement(door);
+      scene.add(door);
+      const sweep = window.getDoorSweep(door);
+      const blocker = new window.Item({ name:'RightHingeBlocker', size:{ wCm:12, lCm:12, hCm:30 }, pos:{ xCm: door.pos.xCm + door.size.lCm * 0.2, yCm: door.size.wCm + 6 } });
+      const intersects = scene._rectIntersectsDoorSweep(blocker, door);
+      const collides = scene.anyCollision(blocker);
+      scene.remove(door.id);
+      assertTrue(!!sweep, 'Expected sweep data for inward door');
+      assertApprox(sweep.center.xCm, door.pos.xCm + door.size.lCm, 1e-6, 'Right hinge center mismatch');
+      assertTrue(intersects, 'Blocker left of right hinge should intersect sweep');
+      assertTrue(collides, 'Blocker intersecting sweep should be rejected');
+    });
+
+    await test('Windows always align with their wall and resist perpendicular rotation', ()=>{
+      setInputValue('addWindowName', 'WallWin');
+      click('btnAddWindow');
+      const win = scene.items.find(i=>i.isWindow && i.name==='WallWin');
+      assertTrue(!!win, 'Window not added');
+      window.setSelectedId(win.id);
+      // Put on top wall
+      const wallSel = document.getElementById('selWall'); wallSel.value = 'top'; wallSel.dispatchEvent(new Event('change', {bubbles:true}));
+      // Try to rotate perpendicular
+      const rotSel = document.getElementById('selRot'); rotSel.value = '90'; rotSel.dispatchEvent(new Event('change', {bubbles:true}));
+      // After onSelectedEdit/applyWallPlacement, window should remain aligned to wall
+      const a = win.footprintAABB();
+      const onWall = Math.abs(a.y + a.l - scene.room.lengthCm) < 1e-6; // touches top wall
+      assertTrue(onWall, 'Window not flush to top wall');
+      // Check orientation: along-wall span >> thickness
+      const span = a.w; const thick = a.l; // top wall: width along X, length small into room
+      assertTrue(span >= thick, 'Window orientation not aligned to wall');
+    });
+
+    // New UI separation tests
+    await test('Selecting door hides furniture options and shows door-only menu', ()=>{
+      setInputValue('addDoorName', 'DoorUI');
+      click('btnAddDoor');
+      const door = scene.items.find(i=>i.isDoor && i.name==='DoorUI');
+      window.setSelectedId(door.id);
+      const f = document.getElementById('selFurnitureOpts');
+      const d = document.getElementById('doorOpts');
+      const w = document.getElementById('windowOpts');
+      assertTrue(getComputedStyle(f).display === 'none', 'Furniture opts should be hidden for door');
+      assertTrue(getComputedStyle(d).display !== 'none', 'Door opts should be visible');
+      assertTrue(getComputedStyle(w).display === 'none', 'Window opts should be hidden for door');
+      // Only width shown for door (selDoorW present); L/H (furniture) hidden in furniture section
+      const selDoorW = document.getElementById('selDoorW');
+      assertTrue(!!selDoorW, 'Door width input missing');
+    });
+
+    await test('Selecting window hides furniture options and shows window-only menu', ()=>{
+      setInputValue('addWindowName', 'WindowUI');
+      click('btnAddWindow');
+      const win = scene.items.find(i=>i.isWindow && i.name==='WindowUI');
+      window.setSelectedId(win.id);
+      const f = document.getElementById('selFurnitureOpts');
+      const d = document.getElementById('doorOpts');
+      const w = document.getElementById('windowOpts');
+      assertTrue(getComputedStyle(f).display === 'none', 'Furniture opts should be hidden for window');
+      assertTrue(getComputedStyle(d).display === 'none', 'Door opts should be hidden for window');
+      assertTrue(getComputedStyle(w).display !== 'none', 'Window opts should be visible');
+      const selWindowW = document.getElementById('selWindowW');
+      assertTrue(!!selWindowW, 'Window width input missing');
     });
 
     elStatus().textContent = state.fail===0 ? 'All tests passed' : 'There were failing tests';

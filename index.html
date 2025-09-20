@@ -37,7 +37,7 @@
 
       <div class="hr"></div>
 
-      <h2>Add Item</h2>
+      <h2>Add Furniture</h2>
       <div class="row">
         <div>
           <label>Name</label>
@@ -76,8 +76,51 @@
         <div class="hint">Items auto-pick the next pastel color unless you override with the color input.</div>
       </div>
       <div style="margin-top:8px; display:flex; gap:8px;">
-        <button id="btnAdd" class="btn primary">Add item</button>
+        <button id="btnAdd" class="btn primary">Add furniture</button>
         <button id="btnSeed" class="btn ghost">Seed sample</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <h2>Add Door</h2>
+      <div class="row">
+        <div>
+          <label>Name</label>
+          <input id="addDoorName" type="text" placeholder="e.g., Door" />
+        </div>
+        <div>
+          <label>Width (cm)</label>
+          <input id="addDoorW" type="number" min="50" step="1" value="90" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Door swing</label>
+          <select id="addDoorSwing">
+            <option value="in">Inward</option>
+            <option value="out">Outward</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="btnAddDoor" class="btn">Add door</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <h2>Add Window</h2>
+      <div class="row">
+        <div>
+          <label>Name</label>
+          <input id="addWindowName" type="text" placeholder="e.g., Window" />
+        </div>
+        <div>
+          <label>Width (cm)</label>
+          <input id="addWindowW" type="number" min="40" step="1" value="120" />
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="btnAddWindow" class="btn">Add window</button>
       </div>
 
       <div class="hr"></div>
@@ -90,46 +133,93 @@
           <input id="selName" type="text" placeholder="Item name" />
         </div>
       </div>
-      <div class="row3" style="margin-top:8px;">
-        <div>
-          <label>W</label>
-          <input id="selW" type="number" />
+      <div id="selFurnitureOpts">
+        <div class="row3" style="margin-top:8px;">
+          <div>
+            <label>W</label>
+            <input id="selW" type="number" />
+          </div>
+          <div>
+            <label>L</label>
+            <input id="selL" type="number" />
+          </div>
+          <div>
+            <label>H</label>
+            <input id="selH" type="number" />
+          </div>
         </div>
-        <div>
-          <label>L</label>
-          <input id="selL" type="number" />
+        <div class="row">
+          <div>
+            <label>z from floor (cm)</label>
+            <input id="selZ" type="number" />
+          </div>
+          <div>
+            <label>Rotation</label>
+            <select id="selRot">
+              <option value="0">0°</option>
+              <option value="90">90°</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label>H</label>
-          <input id="selH" type="number" />
+        <div class="row">
+          <div>
+            <label>Color</label>
+            <input id="selColor" type="color" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button id="btnRotate" class="btn">Rotate 90°</button>
+          </div>
+        </div>
+        <div class="row">
+          <div><label><input id="selHang" type="checkbox" /> Hangable</label></div>
+          <div><label><input id="selCarpet" type="checkbox" /> Carpet</label></div>
         </div>
       </div>
-      <div class="row">
-        <div>
-          <label>z from floor (cm)</label>
-          <input id="selZ" type="number" />
+      <div id="doorOpts" style="display:none;">
+        <div class="row3" style="margin-top:8px;">
+          <div>
+            <label>Width (cm)</label>
+            <input id="selDoorW" type="number" />
+          </div>
+          <div>
+            <label>Door swing</label>
+            <select id="selDoorSwing">
+              <option value="in">Inward</option>
+              <option value="out">Outward</option>
+            </select>
+          </div>
+          <div>
+            <label>Hinge side</label>
+            <select id="selHinge">
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
         </div>
+      </div>
+      <div id="windowOpts" style="display:none;">
+        <div class="row" style="margin-top:8px;">
+          <div>
+            <label>Width (cm)</label>
+            <input id="selWindowW" type="number" />
+          </div>
+        </div>
+      </div>
+      <div id="wallOffsetRow" class="row" style="display:none;">
         <div>
-          <label>Rotation</label>
-          <select id="selRot">
-            <option value="0">0°</option>
-            <option value="90">90°</option>
+          <label>Wall side</label>
+          <select id="selWall">
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+            <option value="bottom">Bottom</option>
+            <option value="top">Top</option>
           </select>
         </div>
-      </div>
-      <div class="row">
         <div>
-          <label>Color</label>
-          <input id="selColor" type="color" />
+          <label>Offset (cm)</label>
+          <input id="selOffset" type="number" />
         </div>
-        <div>
-          <label>&nbsp;</label>
-          <button id="btnRotate" class="btn">Rotate 90°</button>
-        </div>
-      </div>
-      <div class="row">
-        <div><label><input id="selHang" type="checkbox" /> Hangable</label></div>
-        <div><label><input id="selCarpet" type="checkbox" /> Carpet</label></div>
       </div>
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button id="btnDelete" class="btn danger" disabled>Delete</button>

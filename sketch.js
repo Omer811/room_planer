@@ -33,6 +33,13 @@ class Item {
     this.rotationDeg = init?.rotationDeg ?? 0; // 0 or 90
     this.isHangable = !!init?.isHangable;
     this.isCarpet = !!init?.isCarpet;
+    // New types: door/window
+    this.isDoor = !!init?.isDoor;
+    this.isWindow = !!init?.isWindow;
+    this.doorInward = init?.doorInward ?? true; // true=inward, false=outward
+    this.doorHingeRight = init?.doorHingeRight ?? false; // hinge at 'right' end along wall axis
+    this.wallSide = init?.wallSide || null; // 'left'|'right'|'top'|'bottom'
+    this.offsetCm = init?.offsetCm ?? 0; // along-wall offset
     this.color = init?.color || nextPastel();
     this.strokeColor = '#333333';
     this.__invalid = false;
@@ -78,6 +85,17 @@ class Scene {
   anyCollision(candidate){
     for(const it of this.items){
       if (it.id===candidate.id) continue;
+      // Windows block hangables directly on them
+      if ((candidate.isHangable && it.isWindow) || (it.isHangable && candidate.isWindow)){
+        if (Item.aabbOverlap(candidate.footprintAABB(), it.footprintAABB())) return true;
+      }
+      // Door swing area (inward only) is reserved: no other items allowed inside sweep
+      if (candidate.isDoor && candidate.doorInward){
+        if (this._rectIntersectsDoorSweep(it, candidate)) return true;
+      }
+      if (it.isDoor && it.doorInward){
+        if (this._rectIntersectsDoorSweep(candidate, it)) return true;
+      }
       if (candidate.isCarpet || it.isCarpet) continue;
       if (Item.aabbOverlap(candidate.footprintAABB(), it.footprintAABB()) && candidate.verticalOverlap(it)) return true;
     }
@@ -193,6 +211,10 @@ class HistoryManager {
 window.Item = Item;
 window.Scene = Scene;
 window.Room = Room;
+// Expose selected helpers for tests
+window.getDoorSweep = getDoorSweep;
+window.applyWallPlacement = applyWallPlacement;
+window.stickToNearestWall = stickToNearestWall;
 
 // ------------ p5 Integration ------------
 let scene, hist, pixelsPerCm = 2, selectedId = null, dragCtx = null;
@@ -319,12 +341,30 @@ function drawItem(it){
   strokeWeight(isSel? 2:1.25);
   if (it.isCarpet){
     fill(it.color + '55');
+  } else if (it.isWindow) {
+    // Windows: draw as thin translucent bar
+    fill('#60a5fa88');
+  } else if (it.isDoor) {
+    fill('#9ca3af');
   } else {
     fill(it.color);
   }
   rect(x, y, w, h, 8);
   noStroke(); fill(0,0,0,160); textSize(12); textAlign(LEFT, TOP);
   text(it.name, x+6, y+4);
+  // Draw door swing path (filled wedge)
+  if (it.isDoor && it.doorInward){
+    const sweep = getDoorSweep(it);
+    if (sweep){
+      push();
+      fill('#9ca3af33'); stroke('#9ca3af'); strokeWeight(1.5);
+      const cx = worldToScreenX(sweep.center.xCm);
+      const cy = worldToScreenY(sweep.center.yCm);
+      const r = sweep.radiusCm * pixelsPerCm;
+      arc(cx, cy, 2*r, 2*r, sweep.start, sweep.end, PIE);
+      pop();
+    }
+  }
   pop();
 }
 
@@ -337,6 +377,153 @@ function drawHuman(){
   circle(cx, cy, 2*r);
   noStroke(); fill('#111827'); textSize(12); textAlign(CENTER, CENTER);
   text('Human', cx, cy);
+}
+
+// ---- Wall-aware placement helpers for doors/windows ----
+function applyWallPlacement(it){
+  if (!(it.isDoor || it.isWindow) || !it.wallSide) return;
+  const wall = it.wallSide;
+  // Ensure rotation aligns thickness with normal to wall
+  if (wall==='left' || wall==='right'){
+    // Windows need their wider dimension aligned vertically; rotate them accordingly
+    it.rotationDeg = it.isWindow ? 90 : 0;
+    const span = (it.rotationDeg===0) ? it.size.lCm : it.size.wCm; // distance along wall (Y axis)
+    const thick = (it.rotationDeg===0) ? it.size.wCm : it.size.lCm; // depth into room (X axis)
+    const maxOff = Math.max(0, scene.room.lengthCm - span);
+    it.offsetCm = clamp(it.offsetCm, 0, maxOff);
+    it.pos.yCm = it.offsetCm;
+    it.pos.xCm = (wall==='left') ? 0 : (scene.room.widthCm - thick);
+  } else {
+    // For top/bottom, windows should not rotate (so l=thickness), doors rotate to make l=thickness
+    it.rotationDeg = it.isWindow ? 0 : 90;
+    const span = (it.rotationDeg===0) ? it.size.wCm : it.size.lCm; // distance along wall (X axis)
+    const thick = (it.rotationDeg===0) ? it.size.lCm : it.size.wCm; // depth into room (Y axis)
+    const maxOff = Math.max(0, scene.room.widthCm - span);
+    it.offsetCm = clamp(it.offsetCm, 0, maxOff);
+    it.pos.xCm = it.offsetCm;
+    it.pos.yCm = (wall==='bottom') ? 0 : (scene.room.lengthCm - thick);
+  }
+}
+
+function wallAxisVector(side){
+  return (side==='left' || side==='right') ? { x: 0, y: 1 } : { x: 1, y: 0 };
+}
+
+function wallNormalVector(side){
+  if (side==='left') return { x: 1, y: 0 };
+  if (side==='right') return { x: -1, y: 0 };
+  if (side==='bottom') return { x: 0, y: 1 };
+  return { x: 0, y: -1 };
+}
+
+function normalizeAngle(angle){
+  const twoPi = Math.PI * 2;
+  while (angle < 0) angle += twoPi;
+  while (angle >= twoPi) angle -= twoPi;
+  return angle;
+}
+
+function stickToNearestWall(it){
+  const a = it.footprintAABB();
+  const {left,right,bottom,top} = scene.room.walls();
+  const distLeft = Math.abs(a.x - left);
+  const distRight = Math.abs(right - (a.x + a.w));
+  const distBottom = Math.abs(a.y - bottom);
+  const distTop = Math.abs(top - (a.y + a.l));
+  const dists = [ ['left',distLeft], ['right',distRight], ['bottom',distBottom], ['top',distTop] ];
+  dists.sort((x,y)=>x[1]-y[1]);
+  it.wallSide = dists[0][0];
+  // Compute offset from current pos
+  if (it.wallSide==='left' || it.wallSide==='right'){
+    const alongY = (it.rotationDeg===0) ? it.size.lCm : it.size.wCm;
+    it.offsetCm = clamp(it.pos.yCm, 0, Math.max(0, scene.room.lengthCm - alongY));
+  } else {
+    const alongX = (it.rotationDeg===0) ? it.size.wCm : it.size.lCm;
+    it.offsetCm = clamp(it.pos.xCm, 0, Math.max(0, scene.room.widthCm - alongX));
+  }
+  applyWallPlacement(it);
+}
+
+function getDoorSweep(it){
+  if (!it.isDoor) return null;
+  if (!it.doorInward) return null; // outward: ignore sweep inside room
+  // Radius is the door leaf length along the wall (respecting orientation)
+  const leaf = (it.wallSide==='left'||it.wallSide==='right')
+    ? ((it.rotationDeg===0) ? it.size.lCm : it.size.wCm)
+    : ((it.rotationDeg===0) ? it.size.wCm : it.size.lCm);
+  const radiusCm = leaf;
+  // Hinge position depends on hinge side along the wall axis
+  const along = (it.wallSide==='left'||it.wallSide==='right') ? it.pos.yCm : it.pos.xCm; // start coord
+  const hingeCoord = it.doorHingeRight ? (along + leaf) : along;
+  let center;
+  if (it.wallSide==='left') center = { xCm: 0, yCm: hingeCoord };
+  else if (it.wallSide==='right') center = { xCm: scene.room.widthCm, yCm: hingeCoord };
+  else if (it.wallSide==='bottom') center = { xCm: hingeCoord, yCm: 0 };
+  else center = { xCm: hingeCoord, yCm: scene.room.lengthCm };
+  const axis = wallAxisVector(it.wallSide);
+  const normal = wallNormalVector(it.wallSide);
+  const closed = it.doorHingeRight ? { x: -axis.x, y: -axis.y } : axis;
+  const closedAngle = Math.atan2(closed.y, closed.x);
+  const cross = closed.x * normal.y - closed.y * normal.x;
+  const rotationSign = cross >= 0 ? 1 : -1; // +1 CCW, -1 CW
+  const sweepMag = Math.PI / 2;
+  let start, end;
+  if (rotationSign >= 0){
+    start = closedAngle;
+    end = closedAngle + sweepMag;
+  } else {
+    start = closedAngle - sweepMag;
+    end = closedAngle;
+  }
+  start = normalizeAngle(start);
+  end = normalizeAngle(end);
+  if (end < start) end += Math.PI * 2;
+  return { center, radiusCm, start, end };
+}
+
+Scene.prototype._rectIntersectsDoorSweep = function(rectItem, doorItem){
+  const sweep = getDoorSweep(doorItem);
+  if (!sweep) return false;
+  const a = rectItem.footprintAABB();
+  const cx = sweep.center.xCm, cy = sweep.center.yCm, r2 = sweep.radiusCm * sweep.radiusCm;
+  const axis = wallAxisVector(doorItem.wallSide);
+  const normal = wallNormalVector(doorItem.wallSide);
+  const axisSign = doorItem.doorHingeRight ? -1 : 1;
+  // Check rectangle corners for being inside the sweep quadrant roughly
+  const pts = [
+    {x:a.x, y:a.y},
+    {x:a.x+a.w, y:a.y},
+    {x:a.x, y:a.y+a.l},
+    {x:a.x+a.w, y:a.y+a.l},
+  ];
+  for (const p of pts){
+    const dx = p.x - cx, dy = p.y - cy;
+    const axisDot = dx*axis.x + dy*axis.y;
+    const normalDot = dx*normal.x + dy*normal.y;
+    if (normalDot < 0) continue;
+    if (axisSign > 0 ? axisDot < 0 : axisDot > 0) continue;
+    if (Math.abs(axisDot) > sweep.radiusCm) continue;
+    if (normalDot > sweep.radiusCm) continue;
+    if (dx*dx + dy*dy <= r2) return true;
+  }
+  return false;
+};
+
+// Span helpers: map UI width to along-wall span, keeping thickness
+function getSpanWidth(it){
+  if (it.wallSide==='left' || it.wallSide==='right'){
+    return (it.rotationDeg===0) ? it.size.lCm : it.size.wCm;
+  }
+  // top/bottom
+  return (it.rotationDeg===0) ? it.size.wCm : it.size.lCm;
+}
+
+function setSpanWidth(it, span){
+  if (it.wallSide==='left' || it.wallSide==='right'){
+    if (it.rotationDeg===0) it.size.lCm = span; else it.size.wCm = span;
+  } else {
+    if (it.rotationDeg===0) it.size.wCm = span; else it.size.lCm = span;
+  }
 }
 
 function drawOverlay(){
@@ -411,6 +598,10 @@ function mouseDragged(){
   const it = scene.get(dragCtx.id); if (!it) return;
   it.pos.xCm = w.xCm - dragCtx.offset.dx;
   it.pos.yCm = w.yCm - dragCtx.offset.dy;
+  // Doors and Windows stick to nearest wall and update wall/offset
+  if (it.isDoor || it.isWindow){
+    stickToNearestWall(it);
+  }
   clampInsideRoom(it);
   scene.snapToWalls(it);
   scene.snapToNeighbors(it);
@@ -491,6 +682,8 @@ function attachUI(){
 
   safeClick('btnSeed', seedSample);
   safeClick('btnAdd', onAddItem);
+  safeClick('btnAddDoor', onAddDoor);
+  safeClick('btnAddWindow', onAddWindow);
 
   safeClick('btnDelete', onDeleteSelected);
   safeClick('btnDuplicate', onDuplicateSelected);
@@ -506,7 +699,7 @@ function attachUI(){
   safeClick('btnExport', onExport);
   safeOn('importFile', 'change', onImport);
 
-  ['selName','selW','selL','selH','selZ','selRot','selColor','selHang','selCarpet'].forEach(id=>{
+  ['selName','selW','selL','selH','selZ','selRot','selColor','selHang','selCarpet','selWall','selOffset','selDoorSwing','selHinge','selDoorW','selWindowW'].forEach(id=>{
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', onSelectedEdit);
@@ -521,14 +714,53 @@ function onAddItem(){
   const h = parseFloat(document.getElementById('addH').value)||50;
   const isHang = document.getElementById('addHang').checked;
   const isCarpet = document.getElementById('addCarpet').checked;
+  const typeEl = document.getElementById('addType');
+  const type = typeEl ? typeEl.value : 'furniture';
+  const doorSwingEl = document.getElementById('addDoorSwing');
+  const doorInward = doorSwingEl ? (doorSwingEl.value === 'in') : true;
   let color = document.getElementById('addColor').value;
   if (color.toLowerCase() === '#000000') color = nextPastel();
-  const item = new Item({ name, size:{wCm:w,lCm:l,hCm:h}, isHangable:isHang, isCarpet, color });
-  if (isCarpet) item.zFromFloorCm = 0;
+  let item;
+  if (type === 'door'){
+    const t = 8; // thickness cm
+    const leaf = Math.max(60, Math.min(120, l||90));
+    item = new Item({ name: name || 'Door', size:{wCm:t,lCm:leaf,hCm:200}, isHangable:false, isCarpet:false, color:'#9ca3af', isDoor:true, doorInward });
+    item.wallSide = 'left'; item.offsetCm = Math.max(0, (scene.room.lengthCm - leaf)/2);
+    item.rotationDeg = 0; applyWallPlacement(item);
+  } else if (type === 'window'){
+    const t = 6; const span = Math.max(60, Math.min(200, w||100));
+    item = new Item({ name: name || 'Window', size:{wCm:span,lCm:t,hCm:0}, isHangable:false, isCarpet:false, color:'#60a5fa88', isWindow:true });
+    item.wallSide = 'top'; item.offsetCm = Math.max(0, (scene.room.widthCm - span)/2);
+    applyWallPlacement(item);
+  } else {
+    item = new Item({ name, size:{wCm:w,lCm:l,hCm:h}, isHangable:isHang, isCarpet, color });
+    if (isCarpet) item.zFromFloorCm = 0;
+  }
   scene.add(item);
   hist.push(hist.snapshot());
   refreshList();
   updateStatus('Item added');
+}
+
+function onAddDoor(){
+  const name = (document.getElementById('addDoorName').value.trim() || 'Door');
+  const wSpan = parseFloat(document.getElementById('addDoorW').value)||90;
+  const swing = document.getElementById('addDoorSwing').value === 'in';
+  const t = 8; // thickness
+  const item = new Item({ name, size:{wCm:t,lCm:wSpan,hCm:200}, isDoor:true, doorInward:swing, color:'#9ca3af' });
+  item.wallSide = 'left'; item.offsetCm = Math.max(0, (scene.room.lengthCm - wSpan)/2);
+  applyWallPlacement(item);
+  scene.add(item); hist.push(hist.snapshot()); refreshList(); updateStatus('Door added');
+}
+
+function onAddWindow(){
+  const name = (document.getElementById('addWindowName').value.trim() || 'Window');
+  const wSpan = parseFloat(document.getElementById('addWindowW').value)||120;
+  const t = 6; // thickness
+  const item = new Item({ name, size:{wCm:wSpan,lCm:t,hCm:0}, isWindow:true, color:'#60a5fa88' });
+  item.wallSide = 'top'; item.offsetCm = Math.max(0, (scene.room.widthCm - wSpan)/2);
+  applyWallPlacement(item);
+  scene.add(item); hist.push(hist.snapshot()); refreshList(); updateStatus('Window added');
 }
 
 function refreshList(){
@@ -568,6 +800,10 @@ function refreshSelectedPanel(){
     if (btnDel) btnDel.disabled = true;
     if (btnDup) btnDup.disabled = true;
     if (btnSnap) btnSnap.disabled = true;
+    const f = document.getElementById('selFurnitureOpts'); if (f) f.style.display = '';
+    const d = document.getElementById('doorOpts'); if (d) d.style.display = 'none';
+    const w = document.getElementById('windowOpts'); if (w) w.style.display = 'none';
+    const rw = document.getElementById('wallOffsetRow'); if (rw) rw.style.display = 'none';
     return;
   }
   info.textContent = `${it.name} — position (${Math.round(it.pos.xCm)}, ${Math.round(it.pos.yCm)}) cm`;
@@ -585,6 +821,29 @@ function refreshSelectedPanel(){
   setVal('selColor', rgbToHex(it.color));
   setChk('selHang', it.isHangable);
   setChk('selCarpet', it.isCarpet);
+  // Show/Hide sections
+  const isDoor = !!it.isDoor, isWindow = !!it.isWindow;
+  const f = document.getElementById('selFurnitureOpts'); if (f) f.style.display = (isDoor||isWindow)? 'none' : '';
+  const d = document.getElementById('doorOpts'); if (d) d.style.display = isDoor ? '' : 'none';
+  const w = document.getElementById('windowOpts'); if (w) w.style.display = isWindow ? '' : 'none';
+  const rw = document.getElementById('wallOffsetRow'); if (rw) rw.style.display = (isDoor||isWindow) ? '' : 'none';
+  // Doors/windows: wall side + offset + specific width inputs
+  const wallEl = document.getElementById('selWall');
+  const offEl = document.getElementById('selOffset');
+  const doorSwingEl = document.getElementById('selDoorSwing');
+  const hingeEl = document.getElementById('selHinge');
+  if (wallEl && offEl){
+    wallEl.value = it.wallSide || 'left';
+    const offset = (it.wallSide==='left'||it.wallSide==='right') ? it.pos.yCm : it.pos.xCm;
+    offEl.value = Math.round(offset);
+  }
+  if (doorSwingEl) doorSwingEl.value = it.doorInward ? 'in' : 'out';
+  if (hingeEl) hingeEl.value = it.doorHingeRight ? 'right' : 'left';
+  const selDW = document.getElementById('selDoorW');
+  const selWW = document.getElementById('selWindowW');
+  const span = getSpanWidth(it);
+  if (selDW && isDoor) selDW.value = span;
+  if (selWW && isWindow) selWW.value = span;
 }
 
 function onSelectedEdit(){
@@ -594,21 +853,43 @@ function onSelectedEdit(){
     const newName = nameEl.value.trim();
     if (newName) it.name = newName;
   }
-  const W = parseFloat(document.getElementById('selW').value)||it.size.wCm;
-  const L = parseFloat(document.getElementById('selL').value)||it.size.lCm;
-  const H = parseFloat(document.getElementById('selH').value)||it.size.hCm;
+  const W = parseFloat(document.getElementById('selW')?.value)||it.size.wCm;
+  const L = parseFloat(document.getElementById('selL')?.value)||it.size.lCm;
+  const H = parseFloat(document.getElementById('selH')?.value)||it.size.hCm;
   let Z = parseFloat(document.getElementById('selZ').value);
   const rot = parseInt(document.getElementById('selRot').value,10);
   const col = document.getElementById('selColor').value;
   const hang = document.getElementById('selHang').checked;
   const carpet = document.getElementById('selCarpet').checked;
-  it.size.wCm = W; it.size.lCm = L; it.size.hCm = H;
-  it.rotationDeg = rot;
-  it.isHangable = hang; it.isCarpet = carpet;
-  it.color = col;
+  if (!it.isDoor && !it.isWindow){
+    it.size.wCm = W; it.size.lCm = L; it.size.hCm = H;
+    it.rotationDeg = rot;
+    it.isHangable = hang; it.isCarpet = carpet;
+    it.color = col;
+  }
   if (carpet){ it.zFromFloorCm = 0; }
   else if (!hang){ it.zFromFloorCm = 0; }
   else { it.zFromFloorCm = Math.max(0, isNaN(Z)? it.zFromFloorCm : Z); }
+  // Doors/windows: apply wall side + offset if present and applicable
+  if (it.isDoor || it.isWindow){
+    const wallEl = document.getElementById('selWall');
+    const offEl = document.getElementById('selOffset');
+    const doorSwingEl = document.getElementById('selDoorSwing');
+    const hingeEl = document.getElementById('selHinge');
+    if (wallEl) it.wallSide = wallEl.value || it.wallSide || 'left';
+    if (offEl) it.offsetCm = parseFloat(offEl.value)||it.offsetCm||0;
+    if (it.isDoor){
+      if (doorSwingEl) it.doorInward = (doorSwingEl.value === 'in');
+      if (hingeEl) it.doorHingeRight = (hingeEl.value === 'right');
+      const dw = parseFloat(document.getElementById('selDoorW')?.value);
+      if (isFinite(dw)) setSpanWidth(it, dw);
+    }
+    if (it.isWindow){
+      const ww = parseFloat(document.getElementById('selWindowW')?.value);
+      if (isFinite(ww)) setSpanWidth(it, ww);
+    }
+    applyWallPlacement(it);
+  }
   // Normalize position and constraints similar to dragging
   clampInsideRoom(it);
   scene.snapToWalls(it);
@@ -629,7 +910,13 @@ function onDuplicateSelected(){
   const it = scene.get(selectedId); if (!it) return;
   const copy = new Item(JSON.parse(JSON.stringify(it)));
   copy.id = uid(); copy.pos.xCm += 5; copy.pos.yCm += 5; copy.name = it.name+" copy";
-  scene.add(copy); hist.push(hist.snapshot()); updateStatus('Duplicated');
+  scene.add(copy);
+  // Select the new copy to make subsequent edits apply to it
+  selectedId = copy.id;
+  refreshList();
+  refreshSelectedPanel();
+  hist.push(hist.snapshot());
+  updateStatus('Duplicated');
 }
 
 function onSnapSelectedToWall(){
@@ -678,7 +965,7 @@ function onImport(e){
 function serialize(){
   return {
     room: { widthCm: scene.room.widthCm, lengthCm: scene.room.lengthCm, snapEpsilonCm: scene.room.snapEpsilonCm },
-    items: scene.items.map(i=>({ id:i.id, name:i.name, pos:i.pos, size:i.size, zFromFloorCm:i.zFromFloorCm, rotationDeg:i.rotationDeg, isHangable:i.isHangable, isCarpet:i.isCarpet, color:i.color })),
+    items: scene.items.map(i=>({ id:i.id, name:i.name, pos:i.pos, size:i.size, zFromFloorCm:i.zFromFloorCm, rotationDeg:i.rotationDeg, isHangable:i.isHangable, isCarpet:i.isCarpet, isDoor:i.isDoor, isWindow:i.isWindow, doorInward:i.doorInward, doorHingeRight:i.doorHingeRight, wallSide:i.wallSide, offsetCm:i.offsetCm, color:i.color })),
     human: { pos: scene.human.pos, radiusCm: scene.human.radiusCm },
     pixelsPerCm
   };
