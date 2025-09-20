@@ -9,10 +9,8 @@ This project was created as part of a background course in the M.Des Design & Te
 ## Preview
 
 <video src="docs/preview.mp4" autoplay loop muted playsinline width="720">
-  Your browser does not support embedded videos. Watch the preview GIF below.
+  Your browser does not support embedded videos.
 </video>
-
-![Animated preview](docs/preview.gif)
 
 ![Cover image](docs/cover-1200x630.png)
 
@@ -65,4 +63,3 @@ Because the runner uses the actual DOM controls, any failing test usually mirror
 - `scripts/make-media.sh` – helper to regenerate the media assets.
 
 Enjoy planning!
-
