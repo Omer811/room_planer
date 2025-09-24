@@ -10,7 +10,8 @@ This project was created as part of a background course in the M.Des Design & Te
 ## Preview
 
 ![preview.gif](docs/preview.gif)
-Try the live [demo](https://link-url-here.org](https://68d418dec0bcff11039088e1--fluffy-lollipop-4c6bb3.netlify.app)!
+
+Try the live [demo](https://link-url-here.org](https://68d418dec0bcff11039088e1--fluffy-lollipop-4c6bb3.netlify.app)
 
 ---
 
