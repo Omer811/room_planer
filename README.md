@@ -4,7 +4,7 @@ Room Planner is a browser-based tool for quickly sketching interior layouts. It 
 
 This project was created as part of a background course in the M.Des Design & Technology program at Bezalel Academy of Arts and Design, Jerusalem.
 
-[Try the live demo!]:https://link-url-here.org](https://68d418dec0bcff11039088e1--fluffy-lollipop-4c6bb3.netlify.app
+Try the live [demo](https://link-url-here.org](https://68d418dec0bcff11039088e1--fluffy-lollipop-4c6bb3.netlify.app)!
 ---
 
 ## Preview
